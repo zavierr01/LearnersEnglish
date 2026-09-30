@@ -139,6 +139,31 @@
   .tag.goal { background: var(--bronze); }
   .tag.plain { background: var(--blush); color: var(--text); }
 
+  /* checklist */
+  .progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 24px; }
+  .progress-head .pill { margin-top: 0; }
+  #progTxt { font-weight: 700; font-size: 15px; }
+  .pbar { height: 8px; border-radius: 8px; background: var(--blush); margin-top: 12px; overflow: hidden; }
+  .pbar i { display: block; height: 100%; width: 0; background: var(--rose); border-radius: 8px; transition: width .3s ease; }
+  .stop { cursor: pointer; user-select: none; }
+  .stop .cb { flex: none; width: 26px; height: 26px; border: 1.5px solid var(--blush); background: #fff; border-radius: 6px; display: grid; place-items: center; transition: all .12s; }
+  .stop .cb svg { width: 16px; height: 16px; stroke: #fff; opacity: 0; }
+  .stop.done .cb { background: var(--rose); border-color: var(--rose); }
+  .stop.done .cb svg { opacity: 1; }
+  .stop.done b { text-decoration: line-through; opacity: .55; }
+  .stop.done .n, .stop.done .tag { opacity: .5; }
+  .tag.next { background: var(--text); margin-left: 6px; }
+  .savednote { margin-top: 14px; font-size: 14px; color: var(--hint); }
+  .alldone { margin-top: 14px; padding: 12px 16px; background: var(--card); border: 1.5px solid var(--blush); border-radius: var(--radius); font-weight: 700; }
+  a.btn { display: block; text-align: center; text-decoration: none; }
+
+  /* image overlay */
+  #overlay { position: fixed; inset: 0; z-index: 20; background: var(--bg); overflow: auto; padding: 20px; }
+  #overlay[hidden] { display: none; }
+  .ov-inner { max-width: 520px; margin: 0 auto; display: grid; gap: 12px; padding-bottom: 30px; }
+  .ov-tip { font-size: 15px; text-align: center; }
+  #ovImg { width: 100%; height: auto; border-radius: var(--radius); border: 1.5px solid var(--blush); -webkit-touch-callout: default; user-select: auto; }
+
   .screen { animation: in .22s ease; }
   @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
   @media (prefers-reduced-motion: reduce) { .screen { animation: none; } .opt, .btn { transition: none; } }
@@ -147,6 +172,15 @@
 </head>
 <body>
 <div id="app"></div>
+<div id="overlay" hidden>
+  <div class="ov-inner">
+    <p class="ov-tip">Press and hold the picture, then choose <b>Save image</b> or <b>Share</b>.</p>
+    <img id="ovImg" alt="My grammar route">
+    <button class="btn" id="ovShare" hidden>Share image</button>
+    <a class="btn ghost" id="ovDl" download="my-grammar-route.png">Download</a>
+    <button class="btn ghost" id="ovClose">Close</button>
+  </div>
+</div>
 <div class="dock"><div class="dock-inner" id="dock"></div></div>
 <div class="footer"><div><span id="ftitle"></span><span id="fcount"></span></div></div>
 
@@ -233,7 +267,30 @@ const buzz = k => { try { tg && tg.HapticFeedback && tg.HapticFeedback.selection
 
 const screens = [{ t: "intro" }, ...NEEDS.map((n, i) => ({ t: "need", i })), ...DIAG.map((d, i) => ({ t: "diag", i })), { t: "result" }];
 const order = DIAG.map(d => shuffle(d.o.map((_, i) => i)));       // shuffled option order per question
-const state = { step: 0, need: { goal: [], mistakes: [], feel: [] }, diag: {} };   // diag[i] = original option index, or -1 for "not sure"
+/* Saved per Telegram user (CloudStorage, synced across devices). Falls back to this browser's localStorage. */
+const KEY = "b1_route_v1";
+const store = {
+  save(obj) {
+    const v = JSON.stringify(obj);
+    try { localStorage.setItem(KEY, v); } catch (e) {}
+    try { if (tg && tg.initData && tg.CloudStorage) tg.CloudStorage.setItem(KEY, v, () => {}); } catch (e) {}
+  },
+  load(cb) {
+    let done = false;
+    const finish = v => { if (!done) { done = true; cb(v); } };
+    const local = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
+    if (tg && tg.initData && tg.CloudStorage) {
+      try {
+        tg.CloudStorage.getItem(KEY, (err, val) => finish(!err && val ? val : local()));
+        setTimeout(() => finish(local()), 1500);
+        return;
+      } catch (e) {}
+    }
+    finish(local());
+  },
+};
+
+const state = { step: 0, result: null, need: { goal: [], mistakes: [], feel: [] }, diag: {} };   // diag[i] = original option index, or -1 for "not sure"
 
 const $app = document.getElementById("app");
 const $dock = document.getElementById("dock");
@@ -258,8 +315,7 @@ function render() {
     html += `<button class="back" id="back">\u2039 Back</button>
              <div class="head"><span class="num">${pad(qNo)}</span><h2>${ttl}</h2></div>`;
   } else if (s.t === "result") {
-    html += `<button class="back" id="back">\u2039 Review answers</button>
-             <div class="head"><span class="num">\u2713</span><h2>Your study route</h2></div>`;
+    html += `<div class="head"><span class="num">\u2713</span><h2>Your study route</h2></div>`;
   }
 
   html += `<div class="screen">`;
@@ -304,12 +360,13 @@ function render() {
   }
 
   if (s.t === "result") {
-    const r = compute();
+    if (!state.result) { state.result = compute(); state.result.done = {}; }
+    const r = state.result;
     html += resultHtml(r);
-    const btns = [{ label: tg && tg.initData ? "Send my result to my teacher" : "Copy my result", go: () => shareResult(r) }];
+    const btns = [{ label: "Save as image", go: () => saveImage(r) }];
     if (CONFIG.teacherUsername) btns.push({ label: "Message my teacher", ghost: true, go: () => openLink(`https://t.me/${CONFIG.teacherUsername}`) });
     if (CONFIG.enrolUrl) btns.push({ label: "See the course", ghost: true, go: () => openLink(CONFIG.enrolUrl) });
-    btns.push({ label: "Retake the check", ghost: true, go: restart });
+    btns.push({ label: "Retake the check", ghost: true, go: confirmRetake });
     setDock(btns);
   }
 
@@ -317,6 +374,8 @@ function render() {
   $app.innerHTML = html;
   window.scrollTo(0, 0);
   wire();
+  if (s.t === "result") { fillRoute(state.result); }
+  $app.style.paddingBottom = ($dock.children.length ? $dock.parentElement.offsetHeight + 70 : 70) + "px";
   syncBackButton();
 }
 
@@ -366,14 +425,28 @@ function wire() {
 }
 function markOnly(btn) { document.querySelectorAll(".opt").forEach(b => b.classList.remove("on")); btn.classList.add("on"); }
 
-function next() { if (state.step < screens.length - 1) { state.step++; render(); } }
-function prev() { if (state.step > 0) { state.step = screens[state.step].t === "result" ? screens.length - 2 : state.step - 1; render(); } }
+function next() {
+  if (state.step < screens.length - 1) {
+    state.step++;
+    if (screens[state.step].t === "result") {
+      state.result = compute(); state.result.done = {}; state.result.savedAt = Date.now();
+      store.save(state.result);
+    }
+    render();
+  }
+}
+function prev() { if (state.step > 0 && screens[state.step].t !== "result") { state.step--; render(); } }
+function confirmRetake() {
+  const msg = "Retake the check? Your saved route will be replaced when you finish.";
+  if (tg && tg.showConfirm) tg.showConfirm(msg, ok => { if (ok) restart(); });
+  else if (confirm(msg)) restart();
+}
 function restart() { state.step = 0; state.need = { goal: [], mistakes: [], feel: [] }; state.diag = {}; DIAG.forEach((d, i) => order[i] = shuffle(d.o.map((_, k) => k))); render(); }
 
 function syncBackButton() {
   if (!tg || !tg.BackButton) return;
   tg.BackButton.offClick(prev);
-  if (state.step > 0) { tg.BackButton.show(); tg.BackButton.onClick(prev); } else tg.BackButton.hide();
+  if (state.step > 0 && screens[state.step].t !== "result") { tg.BackButton.show(); tg.BackButton.onClick(prev); } else tg.BackButton.hide();
 }
 function openLink(url) {
   if (tg && url.startsWith("https://t.me/")) tg.openTelegramLink(url);
@@ -432,9 +505,19 @@ function compute() {
   return { score, missed, passed, route, pathName, intro, hints };
 }
 
+const TAG_TEXT = { miss: "Gap found", goal: "Matches your goals", final: "Put it all together", "": "Follow in order" };
+
 function resultHtml(r) {
   let h = `<div class="score"><strong>${r.score}</strong><span>of 12 units passed</span></div>
     <p class="verdict"><b>${r.pathName}.</b> ${r.intro}</p>`;
+
+  h += `<div class="progress-head"><span class="pill bronze">Your study order</span><span id="progTxt"></span></div>
+        <div class="pbar"><i id="pbar"></i></div>
+        <ol class="route" id="routeBox"></ol>
+        <div id="allDone"></div>
+        <p class="savednote">Tap a unit to tick it off. Your route is saved, so you can open this app any time to see it.</p>`;
+
+  if (r.hints.length) h += `<div class="card bronze"><h3>Before you start</h3>${r.hints.map(t => `<p>${t}</p>`).join("")}</div>`;
 
   h += `<div class="card"><h3>Check results</h3><div class="grid">`;
   for (let u = 1; u <= 12; u++) {
@@ -442,48 +525,132 @@ function resultHtml(r) {
     h += `<div class="cell ${ok ? "ok" : "miss"}">${ok ? tick : cross}<span>${u}. ${UNITS[u]}</span></div>`;
   }
   h += `</div></div>`;
-
-  h += `<span class="pill bronze">Your study order</span><ol class="route">`;
-  r.route.forEach(s => {
-    const cls = s.tag === "miss" ? "miss" : s.tag === "goal" ? "goal" : "";
-    const tag = s.tag === "miss" ? `<span class="tag">Gap found</span>`
-              : s.tag === "goal" ? `<span class="tag goal">Matches your goals</span>`
-              : s.tag === "final" ? `<span class="tag plain">Put it all together</span>`
-              : `<span class="tag plain">Follow in order</span>`;
-    h += `<li class="stop ${cls}"><span class="n">${String(s.u).padStart(2, "0")}</span><div><b>${UNITS[s.u]}</b>${tag}</div></li>`;
-  });
-  h += `</ol>`;
-
-  if (r.hints.length) h += `<div class="card bronze"><h3>Before you start</h3>${r.hints.map(t => `<p>${t}</p>`).join("")}</div>`;
   return h;
 }
 
-function payload(r) {
-  return {
-    type: "b1_grammar_placement",
-    score: r.score,
-    missed_units: r.missed,
-    route: r.route.map(x => x.u),
-    path: r.pathName,
-    goal: state.need.goal[0] != null ? NEEDS[0].o[state.need.goal[0]] : null,
-    mistakes: state.need.mistakes.map(i => NEEDS[1].o[i]),
-    feeling: state.need.feel[0] != null ? NEEDS[2].o[state.need.feel[0]] : null,
-  };
-}
-
-function shareResult(r) {
-  const data = payload(r);
-  if (tg && tg.initData) {
-    // Works when the app is opened from a keyboard button; the app closes after sending.
-    try { tg.sendData(JSON.stringify(data)); return; } catch (e) {}
+/* checklist */
+function fillRoute(r) {
+  const box = document.getElementById("routeBox");
+  if (!box) return;
+  const nextU = (r.route.find(x => !r.done[x.u]) || {}).u;
+  box.innerHTML = r.route.map(x => {
+    const done = !!r.done[x.u];
+    const cls = x.tag === "miss" ? "miss" : x.tag === "goal" ? "goal" : "";
+    const tagCls = x.tag === "miss" ? "" : x.tag === "goal" ? "goal" : "plain";
+    return `<li class="stop ${cls} ${done ? "done" : ""}" data-u="${x.u}" role="checkbox" aria-checked="${done}" tabindex="0">
+      <span class="cb">${tick}</span>
+      <span class="n">${String(x.u).padStart(2, "0")}</span>
+      <div><b>${UNITS[x.u]}</b><span class="tag ${tagCls}">${TAG_TEXT[x.tag] || TAG_TEXT[""]}</span>${x.u === nextU ? `<span class="tag next">Next up</span>` : ""}</div>
+    </li>`;
+  }).join("");
+  const n = r.route.filter(x => r.done[x.u]).length, total = r.route.length;
+  document.getElementById("progTxt").textContent = `${n} of ${total} done`;
+  document.getElementById("pbar").style.width = Math.round((n / total) * 100) + "%";
+  document.getElementById("allDone").innerHTML = n === total ? `<div class="alldone">All units done. Great work!</div>` : "";
+  if (!box.dataset.bound) {
+    box.dataset.bound = "1";
+    const toggle = li => {
+      if (!li) return;
+      const u = Number(li.dataset.u);
+      r.done[u] = !r.done[u];
+      buzz(); store.save(r); fillRoute(r);
+    };
+    box.addEventListener("click", e => toggle(e.target.closest(".stop")));
+    box.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(e.target.closest(".stop")); } });
   }
-  const text = `B1 Grammar placement\nScore: ${r.score}/12\nRoute: ${r.route.map(x => x.u).join(" \u2192 ")}\nGaps: ${r.missed.length ? r.missed.join(", ") : "none"}`;
-  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
-    .then(() => tg && tg.showAlert ? tg.showAlert("Result copied. Paste it to your teacher.") : alert("Result copied."))
-    .catch(() => alert(text));
 }
 
-render();
+/* save as image */
+async function saveImage(r) {
+  try {
+    await Promise.all([document.fonts.load("700 40px Lora"), document.fonts.load("400 30px Lato"), document.fonts.load("700 30px Lato")]);
+  } catch (e) {}
+  const W = 1080, pad = 60, rowH = 124, headH = 440, footH = 96;
+  const H = headH + r.route.length * rowH + 30 + footH;
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const g = c.getContext("2d");
+  const SERIF = 'Lora, Cambria, Georgia, serif', SANS = 'Lato, Calibri, "Segoe UI", Arial, sans-serif';
+  const PLUM = "#3E2A2F", ROSE = "#BD5F73", BRONZE = "#B5754C", BLUSH = "#E3C3BC", CARD = "#FCF6F1", HINT = "#7d666b";
+  const rr = (x, y, w, h, rad) => { g.beginPath(); g.moveTo(x + rad, y); g.arcTo(x + w, y, x + w, y + h, rad); g.arcTo(x + w, y + h, x, y + h, rad); g.arcTo(x, y + h, x, y, rad); g.arcTo(x, y, x + w, y, rad); g.closePath(); };
+
+  g.fillStyle = "#F6E4DD"; g.fillRect(0, 0, W, H);
+  g.textBaseline = "alphabetic";
+
+  g.fillStyle = "#EFCFD3"; g.font = `700 260px ${SERIF}`; g.textAlign = "right"; g.fillText(String(r.score), W - pad, 250);
+  g.textAlign = "left";
+  g.fillStyle = PLUM; g.font = `700 70px ${SERIF}`; g.fillText("My grammar route", pad, 140);
+  g.font = `italic 34px ${SANS}`; g.fillText(CONFIG.courseName, pad, 196);
+
+  g.font = `700 30px ${SANS}`;
+  const pw = g.measureText(r.pathName).width + 52;
+  g.fillStyle = ROSE; rr(pad, 232, pw, 54, 27); g.fill();
+  g.fillStyle = "#fff"; g.fillText(r.pathName, pad + 26, 269);
+  g.fillStyle = HINT; g.font = `400 30px ${SANS}`; g.fillText(`${r.score} of 12 units passed`, pad + pw + 24, 269);
+
+  const n = r.route.filter(x => r.done[x.u]).length, total = r.route.length;
+  g.fillStyle = PLUM; g.font = `700 34px ${SANS}`; g.fillText("Your study order", pad, 358);
+  g.textAlign = "right"; g.fillText(`${n} of ${total} done`, W - pad, 358); g.textAlign = "left";
+  g.fillStyle = BLUSH; rr(pad, 378, W - pad * 2, 14, 7); g.fill();
+  if (n) { g.fillStyle = ROSE; rr(pad, 378, Math.max(14, (W - pad * 2) * n / total), 14, 7); g.fill(); }
+
+  r.route.forEach((x, i) => {
+    const top = headH + i * rowH, h = rowH - 16, cy = top + h / 2, done = !!r.done[x.u];
+    g.fillStyle = CARD; rr(pad, top, W - pad * 2, h, 22); g.fill();
+    g.strokeStyle = BLUSH; g.lineWidth = 2; rr(pad, top, W - pad * 2, h, 22); g.stroke();
+    // checkbox
+    g.fillStyle = done ? ROSE : "#fff"; rr(pad + 30, cy - 23, 46, 46, 10); g.fill();
+    g.strokeStyle = done ? ROSE : BLUSH; g.lineWidth = 3; rr(pad + 30, cy - 23, 46, 46, 10); g.stroke();
+    if (done) {
+      g.strokeStyle = "#fff"; g.lineWidth = 6; g.lineCap = "round"; g.lineJoin = "round";
+      g.beginPath(); g.moveTo(pad + 42, cy + 1); g.lineTo(pad + 52, cy + 11); g.lineTo(pad + 66, cy - 9); g.stroke();
+    }
+    g.globalAlpha = done ? 0.5 : 1;
+    g.fillStyle = x.tag === "miss" ? ROSE : BRONZE; g.font = `700 52px ${SERIF}`;
+    g.fillText(String(x.u).padStart(2, "0"), pad + 104, cy + 18);
+    g.fillStyle = PLUM; g.font = `700 38px ${SANS}`;
+    g.fillText(UNITS[x.u], pad + 200, top + 47);
+    if (done) { const tw = g.measureText(UNITS[x.u]).width; g.fillRect(pad + 200, top + 36, tw, 3); }
+    g.fillStyle = HINT; g.font = `400 27px ${SANS}`;
+    g.fillText(TAG_TEXT[x.tag] || TAG_TEXT[""], pad + 200, top + 82);
+    g.globalAlpha = 1;
+  });
+
+  g.fillStyle = PLUM; g.fillRect(0, H - footH, W, footH);
+  g.fillStyle = "#EBD9D6"; g.font = `italic 30px ${SANS}`; g.fillText(CONFIG.courseName, pad, H - footH / 2 + 10);
+  g.textAlign = "right"; g.font = `400 30px ${SANS}`;
+  g.fillText(new Date().toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }), W - pad, H - footH / 2 + 10);
+
+  const url = c.toDataURL("image/png");
+  showImage(url);
+}
+
+function showImage(url) {
+  const ov = document.getElementById("overlay");
+  document.getElementById("ovImg").src = url;
+  document.getElementById("ovDl").href = url;
+  const shareBtn = document.getElementById("ovShare");
+  shareBtn.hidden = true;
+  fetch(url).then(res => res.blob()).then(blob => {
+    const file = new File([blob], "my-grammar-route.png", { type: "image/png" });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      shareBtn.hidden = false;
+      shareBtn.onclick = () => navigator.share({ files: [file], title: "My grammar route" }).catch(() => {});
+    }
+  }).catch(() => {});
+  document.getElementById("ovClose").onclick = () => { ov.hidden = true; };
+  ov.hidden = false; ov.scrollTop = 0;
+}
+
+/* start: show the saved route if this user already has one */
+store.load(v => {
+  if (v) {
+    try {
+      const r = JSON.parse(v);
+      if (r && Array.isArray(r.route) && r.route.length) { r.done = r.done || {}; state.result = r; state.step = screens.length - 1; }
+    } catch (e) {}
+  }
+  render();
+});
 </script>
 </body>
 </html>
