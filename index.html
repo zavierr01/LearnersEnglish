@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>B1 Grammar: find your starting point</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Lora:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* palette taken from the slide deck */
+    --bg: #F6E4DD;          /* blush background */
+    --card: #FCF6F1;        /* light card */
+    --pale: #F3E3DC;
+    --text: #3E2A2F;        /* deep plum-brown */
+    --hint: #7d666b;
+    --rose: #BD5F73;
+    --bronze: #B5754C;
+    --blush: #E3C3BC;       /* dividers, borders */
+    --ghost: #EFCFD3;       /* big faint step numbers */
+    --radius: 12px;
+    --serif: Cambria, Caladea, "Lora", Georgia, serif;
+    --sans: Calibri, Carlito, "Lato", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans); }
+  body { min-height: 100vh; min-height: 100dvh; font-size: 17px; line-height: 1.45; }
+
+  #app { max-width: 520px; margin: 0 auto; padding: 0 20px calc(150px + env(safe-area-inset-bottom)); }
+
+  /* slide-style header: ghost number + serif title + blush rule */
+  .head { display: flex; align-items: center; gap: 14px; padding: 22px 0 12px; border-bottom: 2px solid var(--blush); }
+  .head .num { font-family: var(--serif); font-weight: 700; font-size: 44px; line-height: 1; color: var(--ghost); min-width: 58px; }
+  .head h1, .head h2 { margin: 0; }
+  .back { appearance: none; border: 0; background: none; color: var(--hint); font: inherit; font-size: 14px; padding: 12px 0 0; cursor: pointer; }
+  .back:empty { display: none; }
+
+  h1, h2 { font-family: var(--serif); font-weight: 700; color: var(--text); line-height: 1.2; }
+  h1 { font-size: 30px; }
+  h2 { font-size: 22px; }
+  p { margin: 0; }
+  .title-slide { margin-top: 64px; padding-left: 20px; border-left: 5px solid var(--rose); }
+  .title-slide h1 { font-size: 36px; margin: 0; color: var(--text); }
+  .title-slide em { display: block; margin: 4px 0; color: var(--text); font-size: 18px; }
+  .lead { margin-top: 16px; font-size: 15px; }
+
+  .pill {
+    display: inline-block; background: var(--rose); color: #fff; font-weight: 700; font-size: 14px;
+    padding: 6px 16px; border-radius: 999px; margin-top: 20px;
+  }
+  .pill.bronze { background: var(--bronze); }
+
+  .facts { margin: 22px 0 0; padding: 0; list-style: none; }
+  .facts li { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--blush); }
+  .facts li:first-child { border-top: 1px solid var(--blush); }
+  .facts b { min-width: 96px; }
+  .facts span { color: var(--hint); }
+
+  .sentence { font-family: var(--serif); font-weight: 700; font-size: 25px; line-height: 1.35; margin-top: 16px; }
+  .sentence u { text-decoration: none; display: inline-block; min-width: 64px; border-bottom: 2px solid var(--rose); margin: 0 2px; }
+  .sub { color: var(--hint); font-size: 15px; margin-top: 8px; }
+
+  .options { display: grid; gap: 10px; margin-top: 20px; }
+  .opt {
+    appearance: none; text-align: left; width: 100%;
+    display: flex; align-items: center; gap: 14px;
+    padding: 14px 16px; border-radius: var(--radius);
+    background: var(--card); color: var(--text);
+    border: 1.5px solid var(--blush); font: inherit; font-size: 17px; cursor: pointer;
+    transition: border-color .12s, background .12s, transform .08s;
+  }
+  .opt:active { transform: scale(.985); }
+  .opt .mark {
+    flex: none; width: 22px; height: 22px; border: 1.5px solid var(--blush); background: #fff; border-radius: 4px;
+    display: grid; place-items: center; transition: all .12s;
+  }
+  .opt .mark svg { width: 14px; height: 14px; opacity: 0; stroke: #fff; }
+  .opt.on { border-color: var(--rose); background: #fff; }
+  .opt.on .mark { background: var(--rose); border-color: var(--rose); }
+  .opt.on .mark svg { opacity: 1; }
+  .opt.skip { background: none; border: 1.5px dashed var(--blush); color: var(--hint); }
+  .opt.skip.on { border-style: solid; }
+
+  /* footer bar like the slides: dark strip with title and count */
+  .footer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 7;
+    background: var(--text); color: #EBD9D6; font-style: italic; font-size: 13px;
+    padding: 9px 0 calc(9px + env(safe-area-inset-bottom));
+  }
+  .footer div { max-width: 520px; margin: 0 auto; padding: 0 20px; display: flex; justify-content: space-between; }
+  .footer span:last-child { font-style: normal; }
+
+  .dock {
+    position: fixed; left: 0; right: 0; bottom: calc(36px + env(safe-area-inset-bottom)); z-index: 6;
+    padding: 12px 20px 12px; background: linear-gradient(to top, var(--bg) 70%, transparent);
+  }
+  .dock:empty { display: none; }
+  .dock-inner { max-width: 520px; margin: 0 auto; display: grid; gap: 10px; }
+  .btn {
+    appearance: none; width: 100%; border: 0; border-radius: 999px;
+    padding: 14px; font: inherit; font-size: 17px; font-weight: 700; cursor: pointer;
+    background: var(--rose); color: #fff; transition: opacity .15s, transform .08s;
+  }
+  .btn:active { transform: scale(.985); }
+  .btn[disabled] { opacity: .35; cursor: default; }
+  .btn.ghost { background: transparent; color: var(--text); border: 1.5px solid var(--blush); }
+
+  /* result */
+  .score { display: flex; align-items: baseline; gap: 10px; margin-top: 22px; }
+  .score strong { font-family: var(--serif); font-size: 60px; line-height: 1; color: var(--rose); }
+  .score span { color: var(--hint); font-size: 18px; }
+  .verdict { margin-top: 10px; }
+
+  /* light card with accent bar, same as "Common time expressions" */
+  .card { position: relative; margin-top: 18px; background: var(--card); border: 1.5px solid var(--blush); border-radius: var(--radius); overflow: hidden; }
+  .card::before { content: ""; position: absolute; left: 0; top: 10px; bottom: 10px; width: 5px; background: var(--rose); }
+  .card.bronze::before { background: var(--bronze); }
+  .card > * { margin-left: 22px; margin-right: 16px; }
+  .card h3 { font-size: 16px; margin-top: 14px; margin-bottom: 4px; }
+  .card p, .card li { font-size: 15px; }
+  .card p:last-child { margin-bottom: 14px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 0; margin: 16px 0 14px 22px; margin-right: 16px; }
+  .cell { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 14.5px; }
+  .cell svg { width: 16px; height: 16px; flex: none; }
+  .cell.ok svg { stroke: var(--bronze); }
+  .cell.miss { color: var(--rose); font-weight: 700; }
+  .cell.miss svg { stroke: var(--rose); }
+
+  .route { margin: 14px 0 0; padding: 0; list-style: none; }
+  .stop { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid var(--blush); }
+  .stop .n { font-family: var(--serif); font-weight: 700; font-size: 34px; line-height: 1; min-width: 46px; color: var(--ghost); }
+  .stop.miss .n { color: var(--rose); }
+  .stop.goal .n, .stop:last-child .n { color: var(--bronze); }
+  .stop b { display: block; font-size: 16.5px; }
+  .tag { display: inline-block; margin-top: 3px; font-size: 12.5px; font-weight: 700; color: #fff; background: var(--rose); border-radius: 999px; padding: 2px 10px; }
+  .tag.goal { background: var(--bronze); }
+  .tag.plain { background: var(--blush); color: var(--text); }
+
+  .screen { animation: in .22s ease; }
+  @keyframes in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .screen { animation: none; } .opt, .btn { transition: none; } }
+  button:focus-visible { outline: 2px solid var(--rose); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="dock"><div class="dock-inner" id="dock"></div></div>
+<div class="footer"><div><span id="ftitle"></span><span id="fcount"></span></div></div>
+
+<script>
+/* ============ EDIT ME ============ */
+const CONFIG = {
+  courseName: "B1 Grammar for Real Communication",
+  teacherUsername: "",   // e.g. "your_username" (no @). Leave empty to hide the "Message teacher" button.
+  enrolUrl: "",          // optional link to your enrolment page / channel
+};
+
+const UNITS = {
+  1:  "Present Simple & Continuous",
+  2:  "Past Simple & Continuous",
+  3:  "Present Perfect & Past Simple",
+  4:  "Past Simple vs Past Perfect",
+  5:  "Future Forms",
+  6:  "Modal Verbs",
+  7:  "Conditionals",
+  8:  "Comparatives & Superlatives",
+  9:  "Gerunds & Infinitives",
+  10: "Relative Clauses",
+  11: "Passive Voice",
+  12: "Reported Speech",
+  13: "Review and Speaking Challenge",
+};
+
+/* One question per unit. Add more objects with the same `unit` to make the check more reliable:
+   the unit counts as passed only if ALL of its questions are right. */
+const DIAG = [
+  { unit: 1,  q: "I usually ___ coffee, but today I ___ tea.",
+    o: ["drink / am drinking", "am drinking / drink", "drink / drink", "am drinking / am drinking"], a: 0 },
+  { unit: 2,  q: "I ___ TV when the phone rang.",
+    o: ["watched", "was watching", "have watched"], a: 1 },
+  { unit: 3,  q: "I ___ in Singapore since 2020.",
+    o: ["lived", "have lived", "was living"], a: 1 },
+  { unit: 4,  q: "When I arrived, the meeting ___.",
+    o: ["started", "had started", "has started"], a: 1 },
+  { unit: 5,  q: "Look at those clouds! It ___ rain.",
+    o: ["will", "is going to", "rains"], a: 1 },
+  { unit: 6,  q: "You ___ wear a seatbelt. It's the law.",
+    o: ["must", "might", "could"], a: 0 },
+  { unit: 7,  q: "If I ___ more time, I would travel more.",
+    o: ["have", "had", "will have"], a: 1 },
+  { unit: 8,  q: "This is the ___ film I've ever seen.",
+    o: ["bad", "worse", "worst"], a: 2 },
+  { unit: 9,  q: "I enjoy ___ new languages.",
+    o: ["learn", "to learn", "learning"], a: 2 },
+  { unit: 10, q: "The woman ___ lives next door is a doctor.",
+    o: ["who", "which", "whose"], a: 0 },
+  { unit: 11, q: "The report ___ by the team yesterday.",
+    o: ["finished", "was finished", "has finished"], a: 1 },
+  { unit: 12, q: "She said, \u201CI am tired.\u201D \u2192 She said that she ___ tired.",
+    o: ["is", "was", "has been"], a: 1 },
+];
+
+const NEEDS = [
+  { id: "goal", tag: "Your goal", multi: false, q: "What do you mainly want to improve?",
+    o: ["Speaking naturally in daily conversations", "Writing (emails, messages, work documents)",
+        "Exams (IELTS, Cambridge, etc.)", "Understanding what I hear and read"],
+    units: [[5,6,7,9,10], [11,10,3], [7,11,12,4], [10,11,12]],
+    path: ["Speaking confidence", "Writing and formal use", "Exam focus", "Listening and reading focus"] },
+  { id: "mistakes", tag: "Your mistakes", multi: true, q: "Which mistakes do you notice most often?",
+    sub: "Choose all that apply.",
+    o: ["Mixing up past and present tenses", "Talking about future plans",
+        "Giving advice, permission, or possibilities", "Making long or complex sentences",
+        "Repeating what someone else said"],
+    units: [[1,2,3,4], [5], [6,7], [9,10,7], [12,2]] },
+  { id: "feel", tag: "Your confidence", multi: false, q: "How do you feel when you speak English?",
+    o: ["I stop and think about grammar too much", "I speak fluently but make many errors",
+        "I avoid complex sentences because I'm afraid of mistakes"],
+    units: [[], [], [10,7,9]] },
+];
+
+/* ============ APP ============ */
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg) {
+  tg.ready(); tg.expand();
+  try { tg.setHeaderColor("#F6E4DD"); tg.setBackgroundColor("#F6E4DD"); } catch (e) {}
+}
+
+const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const buzz = k => { try { tg && tg.HapticFeedback && tg.HapticFeedback.selectionChanged(); } catch (e) {} };
+
+const screens = [{ t: "intro" }, ...NEEDS.map((n, i) => ({ t: "need", i })), ...DIAG.map((d, i) => ({ t: "diag", i })), { t: "result" }];
+const order = DIAG.map(d => shuffle(d.o.map((_, i) => i)));       // shuffled option order per question
+const state = { step: 0, need: { goal: [], mistakes: [], feel: [] }, diag: {} };   // diag[i] = original option index, or -1 for "not sure"
+
+const $app = document.getElementById("app");
+const $dock = document.getElementById("dock");
+
+const tick = '<svg viewBox="0 0 24 24" fill="none" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+const cross = '<svg viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+
+function render() {
+  const s = screens[state.step];
+  const total = screens.length - 1;
+  const pct = Math.round((state.step / total) * 100);
+  let html = "";
+
+  const pad = n => String(n).padStart(2, "0");
+  const qNo = s.t === "need" ? s.i + 1 : s.t === "diag" ? NEEDS.length + s.i + 1 : 0;
+  const qTotal = NEEDS.length + DIAG.length;
+  document.getElementById("ftitle").textContent = CONFIG.courseName + " \u00B7 placement";
+  document.getElementById("fcount").textContent = qNo ? `${pad(qNo)} / ${qTotal}` : "";
+
+  if (s.t === "need" || s.t === "diag") {
+    const ttl = s.t === "need" ? "About you" : "Quick check";
+    html += `<button class="back" id="back">\u2039 Back</button>
+             <div class="head"><span class="num">${pad(qNo)}</span><h2>${ttl}</h2></div>`;
+  } else if (s.t === "result") {
+    html += `<button class="back" id="back">\u2039 Review answers</button>
+             <div class="head"><span class="num">\u2713</span><h2>Your study route</h2></div>`;
+  }
+
+  html += `<div class="screen">`;
+  $dock.innerHTML = "";
+
+  if (s.t === "intro") {
+    html += `<div class="title-slide"><h1>Where should</h1><h1>you start?</h1>
+      <em>${CONFIG.courseName}</em>
+      <p class="lead">A 5-minute check to find the units that fit your level and your goals.</p></div>
+      <ul class="facts">
+        <li><b>3 questions</b><span>about your goals</span></li>
+        <li><b>12 questions</b><span>one grammar check per unit</span></li>
+        <li><b>Not sure?</b><span>Tap \u201CNot sure\u201D. Don't guess.</span></li>
+      </ul>`;
+    setDock([{ label: "Start", go: next }]);
+  }
+
+  if (s.t === "need") {
+    const n = NEEDS[s.i];
+    const sel = state.need[n.id];
+    html += `<span class="pill">${n.tag}</span><h2 style="margin-top:14px">${n.q}</h2>${n.sub ? `<p class="sub">${n.sub}</p>` : ""}<div class="options">`;
+    n.o.forEach((txt, i) => {
+      html += optHtml(txt, sel.includes(i), n.multi, `data-i="${i}"`);
+    });
+    html += `</div>`;
+    if (n.multi) setDock([{ label: "Continue", go: next, disabled: false }]);
+    else $dock.innerHTML = "";
+  }
+
+  if (s.t === "diag") {
+    const d = DIAG[s.i];
+    const parts = d.q.split("___");
+    const sentence = parts.length === 3
+      ? `${parts[0]}<u></u>${parts[1]}<u></u>${parts[2]}`
+      : parts.join("<u></u>");
+    const sel = state.diag[s.i];
+    html += `<span class="pill bronze">Choose the best option</span><div class="sentence">${sentence}</div><div class="options">`;
+    order[s.i].forEach(oi => { html += optHtml(d.o[oi], sel === oi, false, `data-i="${oi}"`); });
+    html += optHtml("Not sure", sel === -1, false, `data-i="-1"`, "skip");
+    html += `</div>`;
+    $dock.innerHTML = "";
+  }
+
+  if (s.t === "result") {
+    const r = compute();
+    html += resultHtml(r);
+    const btns = [{ label: tg && tg.initData ? "Send my result to my teacher" : "Copy my result", go: () => shareResult(r) }];
+    if (CONFIG.teacherUsername) btns.push({ label: "Message my teacher", ghost: true, go: () => openLink(`https://t.me/${CONFIG.teacherUsername}`) });
+    if (CONFIG.enrolUrl) btns.push({ label: "See the course", ghost: true, go: () => openLink(CONFIG.enrolUrl) });
+    btns.push({ label: "Retake the check", ghost: true, go: restart });
+    setDock(btns);
+  }
+
+  html += `</div>`;
+  $app.innerHTML = html;
+  window.scrollTo(0, 0);
+  wire();
+  syncBackButton();
+}
+
+function optHtml(txt, on, multi, attrs, extra = "") {
+  return `<button class="opt ${multi ? "multi" : ""} ${on ? "on" : ""} ${extra}" ${attrs}>
+    <span class="mark">${tick}</span><span>${txt}</span></button>`;
+}
+
+function setDock(btns) {
+  $dock.innerHTML = "";
+  btns.forEach(b => {
+    const el = document.createElement("button");
+    el.className = "btn" + (b.ghost ? " ghost" : "");
+    el.textContent = b.label;
+    if (b.disabled) el.disabled = true;
+    el.addEventListener("click", b.go);
+    $dock.appendChild(el);
+  });
+}
+
+function wire() {
+  const s = screens[state.step];
+  const back = document.getElementById("back");
+  if (back) back.addEventListener("click", prev);
+
+  document.querySelectorAll(".opt").forEach(btn => {
+    btn.addEventListener("click", () => {
+      buzz();
+      const i = Number(btn.dataset.i);
+      if (s.t === "need") {
+        const n = NEEDS[s.i];
+        if (n.multi) {
+          const arr = state.need[n.id];
+          const at = arr.indexOf(i);
+          at >= 0 ? arr.splice(at, 1) : arr.push(i);
+          btn.classList.toggle("on");
+        } else {
+          state.need[n.id] = [i];
+          markOnly(btn); setTimeout(next, 220);
+        }
+      } else if (s.t === "diag") {
+        state.diag[s.i] = i;
+        markOnly(btn); setTimeout(next, 220);
+      }
+    });
+  });
+}
+function markOnly(btn) { document.querySelectorAll(".opt").forEach(b => b.classList.remove("on")); btn.classList.add("on"); }
+
+function next() { if (state.step < screens.length - 1) { state.step++; render(); } }
+function prev() { if (state.step > 0) { state.step = screens[state.step].t === "result" ? screens.length - 2 : state.step - 1; render(); } }
+function restart() { state.step = 0; state.need = { goal: [], mistakes: [], feel: [] }; state.diag = {}; DIAG.forEach((d, i) => order[i] = shuffle(d.o.map((_, k) => k))); render(); }
+
+function syncBackButton() {
+  if (!tg || !tg.BackButton) return;
+  tg.BackButton.offClick(prev);
+  if (state.step > 0) { tg.BackButton.show(); tg.BackButton.onClick(prev); } else tg.BackButton.hide();
+}
+function openLink(url) {
+  if (tg && url.startsWith("https://t.me/")) tg.openTelegramLink(url);
+  else if (tg) tg.openLink(url);
+  else window.open(url, "_blank");
+}
+
+/* ============ SCORING & ROUTING ============ */
+function compute() {
+  const passed = {};
+  Object.keys(UNITS).forEach(u => { if (u !== "13") passed[u] = true; });
+  DIAG.forEach((d, i) => { if (state.diag[i] !== d.a) passed[d.unit] = false; });
+  const missed = Object.keys(passed).map(Number).filter(u => !passed[u]).sort((a, b) => a - b);
+  const score = 12 - missed.length;
+
+  // weight units by stated needs
+  const weight = {};
+  const add = list => (list || []).forEach(u => weight[u] = (weight[u] || 0) + 1);
+  NEEDS.forEach(n => state.need[n.id].forEach(i => add(n.units[i])));
+  const goalUnits = Object.keys(weight).map(Number).filter(u => u !== 13);
+  const byWeight = goalUnits.sort((a, b) => weight[b] - weight[a] || a - b);
+
+  const goalIdx = state.need.goal[0];
+  const feelIdx = state.need.feel[0];
+  let pathName, route = [], intro = "", note = "";
+
+  if (score <= 4) {
+    pathName = "Foundations";
+    intro = "The tenses in Units 1\u20134 support almost everything else, so build them first and follow the course in order.";
+    for (let u = 1; u <= 13; u++) route.push({ u, tag: missed.includes(u) ? "miss" : (byWeight.slice(0, 4).includes(u) ? "goal" : "") });
+  } else if (score === 12) {
+    pathName = "Speaking challenge";
+    intro = "No gaps in this check. You can go straight to the Review and Speaking Challenge, or look at a higher-level course.";
+    route.push({ u: 13, tag: "final" });
+  } else {
+    pathName = score >= 9 ? "Polish and review" : (goalIdx != null ? NEEDS[0].path[goalIdx] : "Fill the gaps");
+    const boosts = byWeight.filter(u => !missed.includes(u)).slice(0, score >= 9 ? 2 : 3);
+    missed.forEach(u => route.push({ u, tag: "miss" }));
+    boosts.forEach(u => route.push({ u, tag: "goal" }));
+    route.sort((a, b) => a.u - b.u);
+    route.push({ u: 13, tag: "final" });
+    intro = score >= 9
+      ? "Your basics are solid. Take just the units you missed, then finish with the Speaking Challenge."
+      : "Join at your first gap and continue in order. Units marked as goal-fit match what you told us you need.";
+  }
+
+  // prerequisite hints
+  const hints = [];
+  const inRoute = u => route.some(r => r.u === u);
+  if (inRoute(4) && !inRoute(3)) hints.push("Unit 4 builds on Unit 3. Skim Unit 3 first if Present Perfect feels shaky.");
+  if (inRoute(12) && (!inRoute(2) || !inRoute(4)) && score > 4) hints.push("Unit 12 builds on Units 2 and 4. Review them if backshifting tenses is new to you.");
+  if (inRoute(7) && !inRoute(6) && missed.includes(7)) hints.push("Unit 7 works best after Unit 6, so try Modal Verbs first.");
+  if (feelIdx === 0) hints.push("You said you think about grammar too much while speaking. Spend extra time on the speaking practice in Unit 13.");
+  if (feelIdx === 2) hints.push("Units 10, 7 and 9 will help you build longer sentences with less fear.");
+
+  return { score, missed, passed, route, pathName, intro, hints };
+}
+
+function resultHtml(r) {
+  let h = `<div class="score"><strong>${r.score}</strong><span>of 12 units passed</span></div>
+    <p class="verdict"><b>${r.pathName}.</b> ${r.intro}</p>`;
+
+  h += `<div class="card"><h3>Check results</h3><div class="grid">`;
+  for (let u = 1; u <= 12; u++) {
+    const ok = r.passed[u];
+    h += `<div class="cell ${ok ? "ok" : "miss"}">${ok ? tick : cross}<span>${u}. ${UNITS[u]}</span></div>`;
+  }
+  h += `</div></div>`;
+
+  h += `<span class="pill bronze">Your study order</span><ol class="route">`;
+  r.route.forEach(s => {
+    const cls = s.tag === "miss" ? "miss" : s.tag === "goal" ? "goal" : "";
+    const tag = s.tag === "miss" ? `<span class="tag">Gap found</span>`
+              : s.tag === "goal" ? `<span class="tag goal">Matches your goals</span>`
+              : s.tag === "final" ? `<span class="tag plain">Put it all together</span>`
+              : `<span class="tag plain">Follow in order</span>`;
+    h += `<li class="stop ${cls}"><span class="n">${String(s.u).padStart(2, "0")}</span><div><b>${UNITS[s.u]}</b>${tag}</div></li>`;
+  });
+  h += `</ol>`;
+
+  if (r.hints.length) h += `<div class="card bronze"><h3>Before you start</h3>${r.hints.map(t => `<p>${t}</p>`).join("")}</div>`;
+  return h;
+}
+
+function payload(r) {
+  return {
+    type: "b1_grammar_placement",
+    score: r.score,
+    missed_units: r.missed,
+    route: r.route.map(x => x.u),
+    path: r.pathName,
+    goal: state.need.goal[0] != null ? NEEDS[0].o[state.need.goal[0]] : null,
+    mistakes: state.need.mistakes.map(i => NEEDS[1].o[i]),
+    feeling: state.need.feel[0] != null ? NEEDS[2].o[state.need.feel[0]] : null,
+  };
+}
+
+function shareResult(r) {
+  const data = payload(r);
+  if (tg && tg.initData) {
+    // Works when the app is opened from a keyboard button; the app closes after sending.
+    try { tg.sendData(JSON.stringify(data)); return; } catch (e) {}
+  }
+  const text = `B1 Grammar placement\nScore: ${r.score}/12\nRoute: ${r.route.map(x => x.u).join(" \u2192 ")}\nGaps: ${r.missed.length ? r.missed.join(", ") : "none"}`;
+  (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject())
+    .then(() => tg && tg.showAlert ? tg.showAlert("Result copied. Paste it to your teacher.") : alert("Result copied."))
+    .catch(() => alert(text));
+}
+
+render();
+</script>
+</body>
+</html>
