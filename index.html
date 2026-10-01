@@ -202,11 +202,13 @@ const UNITS = {
   7:  "Conditionals",
   8:  "Comparatives & Superlatives",
   9:  "Gerunds & Infinitives",
-  10: "Relative Clauses",
-  11: "Passive Voice",
-  12: "Reported Speech",
-  13: "Review and Speaking Challenge",
+  10: "Passive Voice",
+  11: "Reported Speech",
+  12: "Review and Speaking Challenge",
 };
+
+const FINAL = 12;   // the Review and Speaking Challenge
+const TOTAL = 11;   // units that have a diagnostic question
 
 /* One question per unit. Add more objects with the same `unit` to make the check more reliable:
    the unit counts as passed only if ALL of its questions are right. */
@@ -229,11 +231,9 @@ const DIAG = [
     o: ["bad", "worse", "worst"], a: 2 },
   { unit: 9,  q: "I enjoy ___ new languages.",
     o: ["learn", "to learn", "learning"], a: 2 },
-  { unit: 10, q: "The woman ___ lives next door is a doctor.",
-    o: ["who", "which", "whose"], a: 0 },
-  { unit: 11, q: "The report ___ by the team yesterday.",
+  { unit: 10, q: "The report ___ by the team yesterday.",
     o: ["finished", "was finished", "has finished"], a: 1 },
-  { unit: 12, q: "She said, \u201CI am tired.\u201D \u2192 She said that she ___ tired.",
+  { unit: 11, q: "She said, \u201CI am tired.\u201D \u2192 She said that she ___ tired.",
     o: ["is", "was", "has been"], a: 1 },
 ];
 
@@ -241,18 +241,18 @@ const NEEDS = [
   { id: "goal", tag: "Your goal", multi: false, q: "What do you mainly want to improve?",
     o: ["Speaking naturally in daily conversations", "Writing (emails, messages, work documents)",
         "Exams (IELTS, Cambridge, etc.)", "Understanding what I hear and read"],
-    units: [[5,6,7,9,10], [11,10,3], [7,11,12,4], [10,11,12]],
+    units: [[5,6,7,9], [10,3], [7,10,11,4], [10,11]],
     path: ["Speaking confidence", "Writing and formal use", "Exam focus", "Listening and reading focus"] },
   { id: "mistakes", tag: "Your mistakes", multi: true, q: "Which mistakes do you notice most often?",
     sub: "Choose all that apply.",
     o: ["Mixing up past and present tenses", "Talking about future plans",
         "Giving advice, permission, or possibilities", "Making long or complex sentences",
         "Repeating what someone else said"],
-    units: [[1,2,3,4], [5], [6,7], [9,10,7], [12,2]] },
+    units: [[1,2,3,4], [5], [6,7], [9,7], [11,2]] },
   { id: "feel", tag: "Your confidence", multi: false, q: "How do you feel when you speak English?",
     o: ["I stop and think about grammar too much", "I speak fluently but make many errors",
         "I avoid complex sentences because I'm afraid of mistakes"],
-    units: [[], [], [10,7,9]] },
+    units: [[], [], [7,9]] },
 ];
 
 /* ============ APP ============ */
@@ -268,7 +268,7 @@ const buzz = k => { try { tg && tg.HapticFeedback && tg.HapticFeedback.selection
 const screens = [{ t: "intro" }, ...NEEDS.map((n, i) => ({ t: "need", i })), ...DIAG.map((d, i) => ({ t: "diag", i })), { t: "result" }];
 const order = DIAG.map(d => shuffle(d.o.map((_, i) => i)));       // shuffled option order per question
 /* Saved per Telegram user (CloudStorage, synced across devices). Falls back to this browser's localStorage. */
-const KEY = "b1_route_v1";
+const KEY = "b1_route_v2";
 const store = {
   save(obj) {
     const v = JSON.stringify(obj);
@@ -326,8 +326,8 @@ function render() {
       <em>${CONFIG.courseName}</em>
       <p class="lead">A 5-minute check to find the units that fit your level and your goals.</p></div>
       <ul class="facts">
-        <li><b>3 questions</b><span>about your goals</span></li>
-        <li><b>12 questions</b><span>one grammar check per unit</span></li>
+        <li><b>${NEEDS.length} questions</b><span>about your goals</span></li>
+        <li><b>${DIAG.length} questions</b><span>one grammar check per unit</span></li>
         <li><b>Not sure?</b><span>Tap \u201CNot sure\u201D. Don't guess.</span></li>
       </ul>`;
     setDock([{ label: "Start", go: next }]);
@@ -457,16 +457,16 @@ function openLink(url) {
 /* ============ SCORING & ROUTING ============ */
 function compute() {
   const passed = {};
-  Object.keys(UNITS).forEach(u => { if (u !== "13") passed[u] = true; });
+  Object.keys(UNITS).forEach(u => { if (Number(u) !== FINAL) passed[u] = true; });
   DIAG.forEach((d, i) => { if (state.diag[i] !== d.a) passed[d.unit] = false; });
   const missed = Object.keys(passed).map(Number).filter(u => !passed[u]).sort((a, b) => a - b);
-  const score = 12 - missed.length;
+  const score = TOTAL - missed.length;
 
   // weight units by stated needs
   const weight = {};
   const add = list => (list || []).forEach(u => weight[u] = (weight[u] || 0) + 1);
   NEEDS.forEach(n => state.need[n.id].forEach(i => add(n.units[i])));
-  const goalUnits = Object.keys(weight).map(Number).filter(u => u !== 13);
+  const goalUnits = Object.keys(weight).map(Number).filter(u => u !== FINAL);
   const byWeight = goalUnits.sort((a, b) => weight[b] - weight[a] || a - b);
 
   const goalIdx = state.need.goal[0];
@@ -476,19 +476,19 @@ function compute() {
   if (score <= 4) {
     pathName = "Foundations";
     intro = "The tenses in Units 1\u20134 support almost everything else, so build them first and follow the course in order.";
-    for (let u = 1; u <= 13; u++) route.push({ u, tag: missed.includes(u) ? "miss" : (byWeight.slice(0, 4).includes(u) ? "goal" : "") });
-  } else if (score === 12) {
+    for (let u = 1; u <= FINAL; u++) route.push({ u, tag: missed.includes(u) ? "miss" : (byWeight.slice(0, 4).includes(u) ? "goal" : "") });
+  } else if (score === TOTAL) {
     pathName = "Speaking challenge";
     intro = "No gaps in this check. You can go straight to the Review and Speaking Challenge, or look at a higher-level course.";
-    route.push({ u: 13, tag: "final" });
+    route.push({ u: FINAL, tag: "final" });
   } else {
-    pathName = score >= 9 ? "Polish and review" : (goalIdx != null ? NEEDS[0].path[goalIdx] : "Fill the gaps");
-    const boosts = byWeight.filter(u => !missed.includes(u)).slice(0, score >= 9 ? 2 : 3);
+    pathName = score >= TOTAL - 3 ? "Polish and review" : (goalIdx != null ? NEEDS[0].path[goalIdx] : "Fill the gaps");
+    const boosts = byWeight.filter(u => !missed.includes(u)).slice(0, score >= TOTAL - 3 ? 2 : 3);
     missed.forEach(u => route.push({ u, tag: "miss" }));
     boosts.forEach(u => route.push({ u, tag: "goal" }));
     route.sort((a, b) => a.u - b.u);
-    route.push({ u: 13, tag: "final" });
-    intro = score >= 9
+    route.push({ u: FINAL, tag: "final" });
+    intro = score >= TOTAL - 3
       ? "Your basics are solid. Take just the units you missed, then finish with the Speaking Challenge."
       : "Join at your first gap and continue in order. Units marked as goal-fit match what you told us you need.";
   }
@@ -497,10 +497,10 @@ function compute() {
   const hints = [];
   const inRoute = u => route.some(r => r.u === u);
   if (inRoute(4) && !inRoute(3)) hints.push("Unit 4 builds on Unit 3. Skim Unit 3 first if Present Perfect feels shaky.");
-  if (inRoute(12) && (!inRoute(2) || !inRoute(4)) && score > 4) hints.push("Unit 12 builds on Units 2 and 4. Review them if backshifting tenses is new to you.");
+  if (inRoute(11) && (!inRoute(2) || !inRoute(4)) && score > 4) hints.push("Unit 11 builds on Units 2 and 4. Review them if backshifting tenses is new to you.");
   if (inRoute(7) && !inRoute(6) && missed.includes(7)) hints.push("Unit 7 works best after Unit 6, so try Modal Verbs first.");
-  if (feelIdx === 0) hints.push("You said you think about grammar too much while speaking. Spend extra time on the speaking practice in Unit 13.");
-  if (feelIdx === 2) hints.push("Units 10, 7 and 9 will help you build longer sentences with less fear.");
+  if (feelIdx === 0) hints.push("You said you think about grammar too much while speaking. Spend extra time on the speaking practice in Unit 12.");
+  if (feelIdx === 2) hints.push("Units 7 and 9 will help you build longer sentences with less fear.");
 
   return { score, missed, passed, route, pathName, intro, hints };
 }
@@ -508,7 +508,7 @@ function compute() {
 const TAG_TEXT = { miss: "Gap found", goal: "Matches your goals", final: "Put it all together", "": "Follow in order" };
 
 function resultHtml(r) {
-  let h = `<div class="score"><strong>${r.score}</strong><span>of 12 units passed</span></div>
+  let h = `<div class="score"><strong>${r.score}</strong><span>of ${TOTAL} units passed</span></div>
     <p class="verdict"><b>${r.pathName}.</b> ${r.intro}</p>`;
 
   h += `<div class="progress-head"><span class="pill bronze">Your study order</span><span id="progTxt"></span></div>
@@ -520,7 +520,7 @@ function resultHtml(r) {
   if (r.hints.length) h += `<div class="card bronze"><h3>Before you start</h3>${r.hints.map(t => `<p>${t}</p>`).join("")}</div>`;
 
   h += `<div class="card"><h3>Check results</h3><div class="grid">`;
-  for (let u = 1; u <= 12; u++) {
+  for (let u = 1; u <= TOTAL; u++) {
     const ok = r.passed[u];
     h += `<div class="cell ${ok ? "ok" : "miss"}">${ok ? tick : cross}<span>${u}. ${UNITS[u]}</span></div>`;
   }
@@ -585,7 +585,7 @@ async function saveImage(r) {
   const pw = g.measureText(r.pathName).width + 52;
   g.fillStyle = ROSE; rr(pad, 232, pw, 54, 27); g.fill();
   g.fillStyle = "#fff"; g.fillText(r.pathName, pad + 26, 269);
-  g.fillStyle = HINT; g.font = `400 30px ${SANS}`; g.fillText(`${r.score} of 12 units passed`, pad + pw + 24, 269);
+  g.fillStyle = HINT; g.font = `400 30px ${SANS}`; g.fillText(`${r.score} of ${TOTAL} units passed`, pad + pw + 24, 269);
 
   const n = r.route.filter(x => r.done[x.u]).length, total = r.route.length;
   g.fillStyle = PLUM; g.font = `700 34px ${SANS}`; g.fillText("Your study order", pad, 358);
